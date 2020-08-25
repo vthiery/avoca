@@ -18,3 +18,48 @@ go get -u github.com/vthiery/avoca
 ```
 
 ## Usage
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/vthiery/avoca"
+	"github.com/vthiery/retry"
+)
+
+func main() {
+	client := avoca.NewClient(
+		avoca.WithHTTPClient(
+			&http.Client{
+				Timeout: 200 * time.Millisecond,
+			},
+		),
+		avoca.WithRetrier(
+			retry.New(
+				retry.WithMaxAttempts(10),
+				retry.WithBackoff(
+					retry.NewExponentialBackoff(
+						100*time.Millisecond, // minWait
+						1*time.Second,        // maxWait
+						2*time.Millisecond,   // maxJitter
+					),
+				),
+			),
+		),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	res, err := client.Get(ctx, "http://google.com", nil)
+	if err != nil {
+		fmt.Printf("failed to GET: %v\n", err)
+	}
+	defer res.Body.Close()
+}
+```
