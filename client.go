@@ -35,10 +35,18 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	return res, nil
 }
 
+type RequestCreationError struct {
+	Err error
+}
+
+func (e *RequestCreationError) Error() string {
+	return fmt.Errorf("request creation failed: %w", e.Err).Error()
+}
+
 func (c *Client) Get(ctx context.Context, url string, headers http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("GET - request creation failed: %w", err)
+		return nil, &RequestCreationError{err}
 	}
 	req.Header = headers
 	return c.Do(req)
@@ -47,7 +55,7 @@ func (c *Client) Get(ctx context.Context, url string, headers http.Header) (*htt
 func (c *Client) Post(ctx context.Context, url string, body io.Reader, headers http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("POST - request creation failed: %w", err)
+		return nil, &RequestCreationError{err}
 	}
 	req.Header = headers
 	return c.Do(req)
@@ -56,7 +64,7 @@ func (c *Client) Post(ctx context.Context, url string, body io.Reader, headers h
 func (c *Client) Put(ctx context.Context, url string, body io.Reader, headers http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("PUT - request creation failed: %w", err)
+		return nil, &RequestCreationError{err}
 	}
 	req.Header = headers
 	return c.Do(req)
@@ -65,7 +73,7 @@ func (c *Client) Put(ctx context.Context, url string, body io.Reader, headers ht
 func (c *Client) Patch(ctx context.Context, url string, body io.Reader, headers http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("PATCH - request creation failed: %w", err)
+		return nil, &RequestCreationError{err}
 	}
 	req.Header = headers
 	return c.Do(req)
@@ -74,7 +82,7 @@ func (c *Client) Patch(ctx context.Context, url string, body io.Reader, headers 
 func (c *Client) Delete(ctx context.Context, url string, headers http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("DELETE - request creation failed: %w", err)
+		return nil, &RequestCreationError{err}
 	}
 	req.Header = headers
 	return c.Do(req)
