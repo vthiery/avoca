@@ -23,9 +23,9 @@ var (
 
 const url = "whatever"
 
-func (r *mockRetrier) Do(ctx context.Context, fn func() error) error {
+func (r *mockRetrier) Do(ctx context.Context, fn func(context.Context) error) error {
 	for attempt := 0; attempt < r.maxAttempts; attempt++ {
-		if err := fn(); err != nil {
+		if err := fn(ctx); err != nil {
 			continue
 		}
 		return nil

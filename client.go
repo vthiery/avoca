@@ -21,7 +21,7 @@ type Doer interface {
 
 // Retrier interface that allows to perform retries.
 type Retrier interface {
-	Do(context.Context, func() error) error
+	Do(context.Context, func(context.Context) error) error
 }
 
 // Do makes an HTTP request with the native `http.Do` interface.
@@ -30,7 +30,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		res *http.Response
 		err error
 	)
-	if err := c.retrier.Do(req.Context(), func() error {
+	if err := c.retrier.Do(req.Context(), func(context.Context) error {
 		res, err = c.client.Do(req) // nolint
 		return err
 	}); err != nil {
@@ -134,6 +134,6 @@ func NewClient(opts ...Option) *Client {
 
 type noRetry struct{}
 
-func (r *noRetry) Do(ctx context.Context, fn func() error) error {
-	return fn()
+func (r *noRetry) Do(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
 }
