@@ -36,9 +36,11 @@ func main() {
 	client := avoca.NewClient(
 		avoca.WithHTTPClient(
 			&http.Client{
+				// Timeout the HTTP connection after 200 ms.
 				Timeout: 200 * time.Millisecond,
 			},
 		),
+		// Perform maximum 10 attempts with an exponential backoff.
 		avoca.WithRetrier(
 			retry.New(
 				retry.WithMaxAttempts(10),
@@ -51,6 +53,7 @@ func main() {
 				),
 			),
 		),
+		// Only retry when the status code is >= 500
 		avoca.WithRetryPolicy(
 			func(statusCode int) bool {
 				return statusCode >= http.StatusInternalServerError
