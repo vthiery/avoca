@@ -17,7 +17,6 @@ type mockRetrier struct {
 }
 
 var (
-	errFailAttempt    = errors.New("fail")
 	errFailRequest    = errors.New("fail this request")
 	dummyRequestBody  = `{ "id": "me" }`       // nolint
 	dummyResponseBody = `{ "response": "ok" }` // nolint
@@ -29,13 +28,14 @@ var (
 const dummyURL = "whatever"
 
 func (r *mockRetrier) Do(ctx context.Context, fn func(context.Context) error) error {
+	var err error
 	for attempt := 0; attempt < r.maxAttempts; attempt++ {
-		if err := fn(ctx); err != nil {
+		if err = fn(ctx); err != nil {
 			continue
 		}
 		return nil
 	}
-	return errFailAttempt
+	return err
 }
 
 type mockHTTPClient struct {
@@ -300,9 +300,11 @@ func TestClientSpecificMethodStatusFailure(t *testing.T) { // nolint
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			res, err := tc.fn() // nolint
-			assert.Error(t, err)
-			assert.Nil(t, res)
+			res, err := tc.fn()
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
 
 			internalClient.reset()
 		})
@@ -355,13 +357,6 @@ func TestClientSpecificMethodBadContext(t *testing.T) {
 			assert.Nil(t, res)
 		})
 	}
-}
-
-func TestRequestCreationError(t *testing.T) {
-	err := RequestCreationError{
-		errors.New("an error message"), // nolint
-	}
-	assert.Equal(t, "request creation failed: an error message", err.Error())
 }
 
 type mockHTTPClientChecker struct {

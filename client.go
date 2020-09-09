@@ -2,7 +2,7 @@ package avoca
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -39,29 +39,22 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		res *http.Response
 		err error
 	)
-	if err := c.retrier.Do(req.Context(), func(context.Context) error {
+	err = c.retrier.Do(req.Context(), func(context.Context) error {
 		res, err = c.client.Do(req) // nolint
 		if err != nil {
 			return err
 		}
 		if c.retryPolicy(res.StatusCode) {
-			return fmt.Errorf("received status %d", res.StatusCode) // nolint
+			// Return a statusError to try again
+			return statusError
 		}
-		return err
-	}); err != nil {
+		// The request went fine, no need to retry
+		return nil
+	})
+	if err != nil && !errors.Is(err, statusError) {
 		return nil, err
 	}
 	return res, nil
-}
-
-// RequestCreationError is used to signal the request creation failed.
-type RequestCreationError struct {
-	Err error
-}
-
-// Error returns the error message.
-func (e *RequestCreationError) Error() string {
-	return fmt.Errorf("request creation failed: %w", e.Err).Error()
 }
 
 // Get makes a HTTP GET request to provided URL.
