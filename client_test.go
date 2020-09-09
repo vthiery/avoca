@@ -243,7 +243,7 @@ func TestClientSpecificMethodHardFailure(t *testing.T) {
 	}
 }
 
-func TestClientSpecificMethodStatusFailure(t *testing.T) {
+func TestClientSpecificMethodStatusFailure(t *testing.T) { // nolint
 	hardFailures := 0
 	beforeStatusOK := 3
 	internalClient := failingHTTPClient(hardFailures, beforeStatusOK)

@@ -51,6 +51,11 @@ func main() {
 				),
 			),
 		),
+		avoca.WithRetryPolicy(
+			func(statusCode int) bool {
+				return statusCode >= http.StatusInternalServerError
+			},
+		),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
