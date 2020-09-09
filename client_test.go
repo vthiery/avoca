@@ -17,11 +17,16 @@ type mockRetrier struct {
 }
 
 var (
-	errFailAttempt = errors.New("fail")
-	errFailRequest = errors.New("fail this request")
+	errFailAttempt    = errors.New("fail")
+	errFailRequest    = errors.New("fail this request")
+	dummyRequestBody  = `{ "id": "me" }`       // nolint
+	dummyResponseBody = `{ "response": "ok" }` // nolint
+	dummyHeader       = http.Header{           // nolint
+		"content-type": {"application/json"},
+	}
 )
 
-const url = "whatever"
+const dummyURL = "whatever"
 
 func (r *mockRetrier) Do(ctx context.Context, fn func(context.Context) error) error {
 	for attempt := 0; attempt < r.maxAttempts; attempt++ {
@@ -43,11 +48,10 @@ func (c *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 		c.count++
 		return nil, errFailRequest
 	}
-	res := &http.Response{
+	return &http.Response{
 		StatusCode: http.StatusOK,
-	}
-	res.Body = ioutil.NopCloser(strings.NewReader(`{ "response": "ok" }`))
-	return res, nil
+		Body:       ioutil.NopCloser(strings.NewReader(`{ "response": "ok" }`)),
+	}, nil
 }
 
 func (c *mockHTTPClient) reset() {
@@ -121,31 +125,31 @@ func TestClientSpecificMethodSuccess(t *testing.T) { // nolint: funlen
 		{
 			"Get",
 			func() (*http.Response, error) {
-				return c.Get(ctx, url, nil)
+				return c.Get(ctx, dummyURL, nil)
 			},
 		},
 		{
 			"Post",
 			func() (*http.Response, error) {
-				return c.Post(ctx, url, nil, nil)
+				return c.Post(ctx, dummyURL, nil, nil)
 			},
 		},
 		{
 			"Put",
 			func() (*http.Response, error) {
-				return c.Put(ctx, url, nil, nil)
+				return c.Put(ctx, dummyURL, nil, nil)
 			},
 		},
 		{
 			"Patch",
 			func() (*http.Response, error) {
-				return c.Patch(ctx, url, nil, nil)
+				return c.Patch(ctx, dummyURL, nil, nil)
 			},
 		},
 		{
 			"Delete",
 			func() (*http.Response, error) {
-				return c.Delete(ctx, url, nil)
+				return c.Delete(ctx, dummyURL, nil)
 			},
 		},
 	}
@@ -180,31 +184,31 @@ func TestClientSpecificMethodFailure(t *testing.T) {
 		{
 			"Get",
 			func() (*http.Response, error) {
-				return c.Get(ctx, url, nil)
+				return c.Get(ctx, dummyURL, nil)
 			},
 		},
 		{
 			"Post",
 			func() (*http.Response, error) {
-				return c.Post(ctx, url, nil, nil)
+				return c.Post(ctx, dummyURL, nil, nil)
 			},
 		},
 		{
 			"Put",
 			func() (*http.Response, error) {
-				return c.Put(ctx, url, nil, nil)
+				return c.Put(ctx, dummyURL, nil, nil)
 			},
 		},
 		{
 			"Patch",
 			func() (*http.Response, error) {
-				return c.Patch(ctx, url, nil, nil)
+				return c.Patch(ctx, dummyURL, nil, nil)
 			},
 		},
 		{
 			"Delete",
 			func() (*http.Response, error) {
-				return c.Delete(ctx, url, nil)
+				return c.Delete(ctx, dummyURL, nil)
 			},
 		},
 	}
@@ -235,31 +239,31 @@ func TestClientSpecificMethodBadContext(t *testing.T) {
 		{
 			"Get",
 			func() (*http.Response, error) {
-				return c.Get(nil, url, nil) // nolint
+				return c.Get(nil, dummyURL, nil) // nolint
 			},
 		},
 		{
 			"Post",
 			func() (*http.Response, error) {
-				return c.Post(nil, url, nil, nil) // nolint
+				return c.Post(nil, dummyURL, nil, nil) // nolint
 			},
 		},
 		{
 			"Put",
 			func() (*http.Response, error) {
-				return c.Put(nil, url, nil, nil) // nolint
+				return c.Put(nil, dummyURL, nil, nil) // nolint
 			},
 		},
 		{
 			"Patch",
 			func() (*http.Response, error) {
-				return c.Patch(nil, url, nil, nil) // nolint
+				return c.Patch(nil, dummyURL, nil, nil) // nolint
 			},
 		},
 		{
 			"Delete",
 			func() (*http.Response, error) {
-				return c.Delete(nil, url, nil) // nolint
+				return c.Delete(nil, dummyURL, nil) // nolint
 			},
 		},
 	}
@@ -278,4 +282,100 @@ func TestRequestCreationError(t *testing.T) {
 		errors.New("an error message"), // nolint
 	}
 	assert.Equal(t, "request creation failed: an error message", err.Error())
+}
+
+type mockHTTPClientChecker struct {
+	t *testing.T
+
+	expectedMethod  string
+	expectedURL     string
+	expectedHeaders http.Header
+	expectedBody    *string
+}
+
+func (c *mockHTTPClientChecker) Do(req *http.Request) (*http.Response, error) {
+	assert.Equal(c.t, c.expectedMethod, req.Method)
+	assert.Equal(c.t, c.expectedURL, req.URL.String())
+	assert.Equal(c.t, c.expectedHeaders, req.Header)
+
+	if c.expectedBody != nil {
+		body, err := ioutil.ReadAll(req.Body)
+		assert.NoError(c.t, err)
+		assert.Equal(c.t, *c.expectedBody, string(body))
+	}
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       ioutil.NopCloser(strings.NewReader(`{ "response": "ok" }`)),
+	}, nil
+}
+
+func TestClientGet(t *testing.T) {
+	c := NewClient(WithHTTPClient(&mockHTTPClientChecker{
+		t,
+		http.MethodGet,
+		dummyURL,
+		dummyHeader,
+		nil,
+	}))
+
+	res, err := c.Get(context.Background(), dummyURL, dummyHeader)
+	assert.NoError(t, res.Body.Close())
+	assert.NoError(t, err)
+}
+
+func TestClientPost(t *testing.T) {
+	c := NewClient(WithHTTPClient(&mockHTTPClientChecker{
+		t,
+		http.MethodPost,
+		dummyURL,
+		dummyHeader,
+		&dummyRequestBody,
+	}))
+
+	res, err := c.Post(context.Background(), dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+	assert.NoError(t, res.Body.Close())
+	assert.NoError(t, err)
+}
+
+func TestClientPut(t *testing.T) {
+	c := NewClient(WithHTTPClient(&mockHTTPClientChecker{
+		t,
+		http.MethodPut,
+		dummyURL,
+		dummyHeader,
+		&dummyRequestBody,
+	}))
+
+	res, err := c.Put(context.Background(), dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+	assert.NoError(t, res.Body.Close())
+	assert.NoError(t, err)
+}
+
+func TestClientPatch(t *testing.T) {
+	c := NewClient(WithHTTPClient(&mockHTTPClientChecker{
+		t,
+		http.MethodPatch,
+		dummyURL,
+		dummyHeader,
+		&dummyRequestBody,
+	}))
+
+	res, err := c.Patch(context.Background(), dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+	assert.NoError(t, res.Body.Close())
+	assert.NoError(t, err)
+}
+
+func TestClientDelete(t *testing.T) {
+	c := NewClient(WithHTTPClient(&mockHTTPClientChecker{
+		t,
+		http.MethodDelete,
+		dummyURL,
+		dummyHeader,
+		nil,
+	}))
+
+	res, err := c.Delete(context.Background(), dummyURL, dummyHeader)
+	assert.NoError(t, res.Body.Close())
+	assert.NoError(t, err)
 }

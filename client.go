@@ -61,7 +61,7 @@ func (c *Client) Get(ctx context.Context, url string, headers http.Header) (*htt
 
 // Post makes a HTTP POST request to provided URL.
 func (c *Client) Post(ctx context.Context, url string, body io.Reader, headers http.Header) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return nil, &RequestCreationError{err}
 	}
@@ -71,7 +71,7 @@ func (c *Client) Post(ctx context.Context, url string, body io.Reader, headers h
 
 // Put makes a HTTP PUT request to provided URL.
 func (c *Client) Put(ctx context.Context, url string, body io.Reader, headers http.Header) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, body)
 	if err != nil {
 		return nil, &RequestCreationError{err}
 	}
@@ -81,7 +81,7 @@ func (c *Client) Put(ctx context.Context, url string, body io.Reader, headers ht
 
 // Patch makes a HTTP PATCH request to provided URL.
 func (c *Client) Patch(ctx context.Context, url string, body io.Reader, headers http.Header) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, body)
 	if err != nil {
 		return nil, &RequestCreationError{err}
 	}
