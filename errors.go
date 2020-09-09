@@ -15,7 +15,7 @@ func (e *RequestCreationError) Error() string {
 	return fmt.Errorf("request creation failed: %w", e.Err).Error()
 }
 
-// statusError is only used to be able to differentiate between
+// errStatus is only used to be able to differentiate between
 // an actual error from the underlying HTTP client and an
 // error that must be returned for retryable HTTP codes.
-var statusError = errors.New("status error") // nolint
+var errStatus = errors.New("status error")

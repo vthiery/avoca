@@ -45,13 +45,13 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 			return err
 		}
 		if c.retryPolicy(res.StatusCode) {
-			// Return a statusError to try again
-			return statusError
+			// Return a errStatus to try again
+			return errStatus
 		}
 		// The request went fine, no need to retry
 		return nil
 	})
-	if err != nil && !errors.Is(err, statusError) {
+	if err != nil && !errors.Is(err, errStatus) {
 		return nil, err
 	}
 	return res, nil
