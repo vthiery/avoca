@@ -16,41 +16,49 @@ type mockRetrier struct {
 	maxAttempts int
 }
 
+// nolint:gochecknoglobals
 var (
-	errFailAttempt    = errors.New("fail")
 	errFailRequest    = errors.New("fail this request")
-	dummyRequestBody  = `{ "id": "me" }`       // nolint
-	dummyResponseBody = `{ "response": "ok" }` // nolint
-	dummyHeader       = http.Header{           // nolint
+	dummyURL          = `whatever`
+	dummyRequestBody  = `{ "id": "me" }`
+	dummyResponseBody = `{ "response": "whatever" }`
+	dummyHeader       = http.Header{
 		"content-type": {"application/json"},
 	}
 )
 
-const dummyURL = "whatever"
-
 func (r *mockRetrier) Do(ctx context.Context, fn func(context.Context) error) error {
+	var err error
 	for attempt := 0; attempt < r.maxAttempts; attempt++ {
-		if err := fn(ctx); err != nil {
+		if err = fn(ctx); err != nil {
 			continue
 		}
 		return nil
 	}
-	return errFailAttempt
+	return err
 }
 
 type mockHTTPClient struct {
-	failures int
-	count    int
+	hardFailures   int
+	beforeStatusOK int
+	count          int
 }
 
 func (c *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	if c.count < c.failures {
+	if c.count < c.hardFailures {
 		c.count++
 		return nil, errFailRequest
 	}
+	if c.count < c.beforeStatusOK {
+		c.count++
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       ioutil.NopCloser(strings.NewReader(dummyResponseBody)),
+		}, nil
+	}
 	return &http.Response{
 		StatusCode: http.StatusOK,
-		Body:       ioutil.NopCloser(strings.NewReader(`{ "response": "ok" }`)),
+		Body:       ioutil.NopCloser(strings.NewReader(dummyResponseBody)),
 	}, nil
 }
 
@@ -58,26 +66,31 @@ func (c *mockHTTPClient) reset() {
 	c.count = 0
 }
 
-func failingHTTPClient(failures int) *mockHTTPClient {
+func failingHTTPClient(hardFailures int, beforeStatusOK int) *mockHTTPClient {
 	return &mockHTTPClient{
-		failures: failures,
+		hardFailures:   hardFailures,
+		beforeStatusOK: beforeStatusOK,
 	}
 }
 
 func TestClientDoSuccess(t *testing.T) {
-	failures := 3
+	hardFailures := 3
+	beforeStatusOK := hardFailures + 1
 	c := NewClient(
 		WithHTTPClient(
-			failingHTTPClient(failures),
+			failingHTTPClient(hardFailures, beforeStatusOK),
 		),
 		WithRetrier(
 			&mockRetrier{
-				maxAttempts: failures + 1,
+				maxAttempts: beforeStatusOK + 1,
 			},
 		),
+		WithRetryPolicy(func(statusCode int) bool {
+			return statusCode >= http.StatusInternalServerError
+		}),
 	)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "whatever", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dummyURL, nil)
 	require.NoError(t, err)
 
 	res, err := c.Do(req)
@@ -88,14 +101,15 @@ func TestClientDoSuccess(t *testing.T) {
 }
 
 func TestClientDoFailure(t *testing.T) {
-	failures := 1
+	hardFailures := 1
+	beforeStatusOK := hardFailures + 1
 	c := NewClient(
 		WithHTTPClient(
-			failingHTTPClient(failures),
+			failingHTTPClient(hardFailures, beforeStatusOK),
 		),
 	)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "whatever", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dummyURL, nil)
 	require.NoError(t, err)
 
 	res, err := c.Do(req) // nolint
@@ -104,16 +118,20 @@ func TestClientDoFailure(t *testing.T) {
 }
 
 func TestClientSpecificMethodSuccess(t *testing.T) { // nolint: funlen
-	failures := 3
-	internalClient := failingHTTPClient(failures)
+	hardFailures := 3
+	beforeStatusOK := hardFailures + 1
+	internalClient := failingHTTPClient(hardFailures, beforeStatusOK)
 
 	c := NewClient(
 		WithHTTPClient(internalClient),
 		WithRetrier(
 			&mockRetrier{
-				maxAttempts: failures + 1,
+				maxAttempts: beforeStatusOK + 1,
 			},
 		),
+		WithRetryPolicy(func(statusCode int) bool {
+			return statusCode >= http.StatusInternalServerError
+		}),
 	)
 
 	ctx := context.Background()
@@ -167,9 +185,10 @@ func TestClientSpecificMethodSuccess(t *testing.T) { // nolint: funlen
 	}
 }
 
-func TestClientSpecificMethodFailure(t *testing.T) {
-	failures := 1
-	internalClient := failingHTTPClient(failures)
+func TestClientSpecificMethodHardFailure(t *testing.T) {
+	hardFailures := 1
+	beforeStatusOK := 1
+	internalClient := failingHTTPClient(hardFailures, beforeStatusOK)
 
 	c := NewClient(
 		WithHTTPClient(internalClient),
@@ -224,13 +243,76 @@ func TestClientSpecificMethodFailure(t *testing.T) {
 	}
 }
 
-func TestClientSpecificMethodBadContext(t *testing.T) {
-	failures := 1
+func TestClientSpecificMethodStatusFailure(t *testing.T) { // nolint
+	hardFailures := 0
+	beforeStatusOK := 3
+	internalClient := failingHTTPClient(hardFailures, beforeStatusOK)
+
 	c := NewClient(
-		WithHTTPClient(
-			failingHTTPClient(failures),
+		WithHTTPClient(internalClient),
+		WithRetrier(
+			&mockRetrier{
+				maxAttempts: 1,
+			},
 		),
+		WithRetryPolicy(func(statusCode int) bool {
+			return statusCode >= http.StatusInternalServerError
+		}),
 	)
+
+	ctx := context.Background()
+
+	testCases := []struct {
+		name string
+		fn   func() (*http.Response, error)
+	}{
+		{
+			"Get",
+			func() (*http.Response, error) {
+				return c.Get(ctx, dummyURL, nil)
+			},
+		},
+		{
+			"Post",
+			func() (*http.Response, error) {
+				return c.Post(ctx, dummyURL, nil, nil)
+			},
+		},
+		{
+			"Put",
+			func() (*http.Response, error) {
+				return c.Put(ctx, dummyURL, nil, nil)
+			},
+		},
+		{
+			"Patch",
+			func() (*http.Response, error) {
+				return c.Patch(ctx, dummyURL, nil, nil)
+			},
+		},
+		{
+			"Delete",
+			func() (*http.Response, error) {
+				return c.Delete(ctx, dummyURL, nil)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := tc.fn()
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
+
+			internalClient.reset()
+		})
+	}
+}
+
+func TestClientSpecificMethodBadContext(t *testing.T) {
+	c := NewClient()
 
 	testCases := []struct {
 		name string
@@ -277,13 +359,6 @@ func TestClientSpecificMethodBadContext(t *testing.T) {
 	}
 }
 
-func TestRequestCreationError(t *testing.T) {
-	err := RequestCreationError{
-		errors.New("an error message"), // nolint
-	}
-	assert.Equal(t, "request creation failed: an error message", err.Error())
-}
-
 type mockHTTPClientChecker struct {
 	t *testing.T
 
@@ -306,7 +381,7 @@ func (c *mockHTTPClientChecker) Do(req *http.Request) (*http.Response, error) {
 
 	return &http.Response{
 		StatusCode: http.StatusOK,
-		Body:       ioutil.NopCloser(strings.NewReader(`{ "response": "ok" }`)),
+		Body:       ioutil.NopCloser(strings.NewReader(dummyResponseBody)),
 	}, nil
 }
 
