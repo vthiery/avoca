@@ -15,7 +15,7 @@ func (e *RequestCreationError) Error() string {
 	return fmt.Errorf("request creation failed: %w", e.Err).Error()
 }
 
-// errStatus is only used to be able to differentiate between
+// ErrStatusCode is used internally to be able to differentiate between
 // an actual error from the underlying HTTP client and an
-// error that must be returned for retryable HTTP codes.
-var errStatus = errors.New("status error")
+// error that is returned for to retry retryable HTTP codes (from policy).
+var ErrStatusCode = errors.New("status code internal error")
