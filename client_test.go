@@ -16,16 +16,16 @@ type mockRetrier struct {
 	maxAttempts int
 }
 
+// nolint:gochecknoglobals
 var (
 	errFailRequest    = errors.New("fail this request")
-	dummyRequestBody  = `{ "id": "me" }`       // nolint
-	dummyResponseBody = `{ "response": "ok" }` // nolint
-	dummyHeader       = http.Header{           // nolint
+	dummyURL          = `whatever`
+	dummyRequestBody  = `{ "id": "me" }`
+	dummyResponseBody = `{ "response": "whatever" }`
+	dummyHeader       = http.Header{
 		"content-type": {"application/json"},
 	}
 )
-
-const dummyURL = "whatever"
 
 func (r *mockRetrier) Do(ctx context.Context, fn func(context.Context) error) error {
 	var err error
@@ -53,12 +53,12 @@ func (c *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 		c.count++
 		return &http.Response{
 			StatusCode: http.StatusInternalServerError,
-			Body:       ioutil.NopCloser(strings.NewReader(`{ "response": "not ok" }`)),
+			Body:       ioutil.NopCloser(strings.NewReader(dummyResponseBody)),
 		}, nil
 	}
 	return &http.Response{
 		StatusCode: http.StatusOK,
-		Body:       ioutil.NopCloser(strings.NewReader(`{ "response": "ok" }`)),
+		Body:       ioutil.NopCloser(strings.NewReader(dummyResponseBody)),
 	}, nil
 }
 
@@ -90,7 +90,7 @@ func TestClientDoSuccess(t *testing.T) {
 		}),
 	)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "whatever", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dummyURL, nil)
 	require.NoError(t, err)
 
 	res, err := c.Do(req)
@@ -109,7 +109,7 @@ func TestClientDoFailure(t *testing.T) {
 		),
 	)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "whatever", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dummyURL, nil)
 	require.NoError(t, err)
 
 	res, err := c.Do(req) // nolint
@@ -381,7 +381,7 @@ func (c *mockHTTPClientChecker) Do(req *http.Request) (*http.Response, error) {
 
 	return &http.Response{
 		StatusCode: http.StatusOK,
-		Body:       ioutil.NopCloser(strings.NewReader(`{ "response": "ok" }`)),
+		Body:       ioutil.NopCloser(strings.NewReader(dummyResponseBody)),
 	}, nil
 }
 
