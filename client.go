@@ -9,9 +9,14 @@ import (
 )
 
 // Client composes a Doer and a Retrier.
+// By default, the client uses:
+//     * a http.Client with a timeout set to 60 * time.Second
+//     * a retrier that does not retry
+//     * a retry policy that return false for all HTTP codes
 type Client struct {
-	client  Doer
-	retrier Retrier
+	client      Doer
+	retrier     Retrier
+	retryPolicy RetryPolicy
 }
 
 // Doer interface that match the standard HTTP client `http.Do` interface.
@@ -24,6 +29,10 @@ type Retrier interface {
 	Do(context.Context, func(context.Context) error) error
 }
 
+// RetryPolicy describes the retry policy based on HTTP codes.
+// It should return true for retryable HTTP code and false otherwise.
+type RetryPolicy func(statusCode int) bool
+
 // Do makes an HTTP request with the native `http.Do` interface.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	var (
@@ -32,6 +41,12 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	)
 	if err := c.retrier.Do(req.Context(), func(context.Context) error {
 		res, err = c.client.Do(req) // nolint
+		if err != nil {
+			return err
+		}
+		if c.retryPolicy(res.StatusCode) {
+			return fmt.Errorf("received status %d", res.StatusCode) // nolint
+		}
 		return err
 	}); err != nil {
 		return nil, err
@@ -116,7 +131,12 @@ func WithRetrier(retrier Retrier) Option {
 	}
 }
 
-const defaultHTTPTimeout = 60 * time.Second
+// WithRetryPolicy sets the retry policy.
+func WithRetryPolicy(retryPolicy RetryPolicy) Option {
+	return func(c *Client) {
+		c.retryPolicy = retryPolicy
+	}
+}
 
 // NewClient returns a new instance of the Client.
 func NewClient(opts ...Option) *Client {
@@ -124,7 +144,8 @@ func NewClient(opts ...Option) *Client {
 		client: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},
-		retrier: &noRetry{},
+		retrier:     &noRetry{},
+		retryPolicy: defaultRetryPolicy,
 	}
 	for _, opt := range opts {
 		opt(&client)
@@ -132,8 +153,14 @@ func NewClient(opts ...Option) *Client {
 	return &client
 }
 
+const defaultHTTPTimeout = 60 * time.Second
+
 type noRetry struct{}
 
 func (r *noRetry) Do(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
+}
+
+func defaultRetryPolicy(statusCode int) bool {
+	return false
 }
