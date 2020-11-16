@@ -12,10 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mockRetrier struct {
-	maxAttempts int
-}
-
 // nolint:gochecknoglobals
 var (
 	errFailRequest    = errors.New("fail this request")
@@ -26,6 +22,10 @@ var (
 		"content-type": {"application/json"},
 	}
 )
+
+type mockRetrier struct {
+	maxAttempts int
+}
 
 func (r *mockRetrier) Do(ctx context.Context, fn func(context.Context) error) error {
 	var err error
@@ -39,12 +39,24 @@ func (r *mockRetrier) Do(ctx context.Context, fn func(context.Context) error) er
 }
 
 type mockHTTPClient struct {
+	t *testing.T
+
 	hardFailures   int
 	beforeStatusOK int
 	count          int
 }
 
 func (c *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	// Sanity checks
+	assert.Equal(c.t, dummyURL, req.URL.String())
+	assert.Equal(c.t, dummyHeader, req.Header)
+
+	if req.Body != nil {
+		body, err := ioutil.ReadAll(req.Body)
+		assert.NoError(c.t, err)
+		assert.Equal(c.t, dummyRequestBody, string(body))
+	}
+
 	if c.count < c.hardFailures {
 		c.count++
 		return nil, errFailRequest
@@ -66,8 +78,10 @@ func (c *mockHTTPClient) reset() {
 	c.count = 0
 }
 
-func failingHTTPClient(hardFailures int, beforeStatusOK int) *mockHTTPClient {
+func newMockHTTPClient(t *testing.T, hardFailures int, beforeStatusOK int) *mockHTTPClient {
 	return &mockHTTPClient{
+		t: t,
+
 		hardFailures:   hardFailures,
 		beforeStatusOK: beforeStatusOK,
 	}
@@ -78,7 +92,7 @@ func TestClientDoSuccess(t *testing.T) {
 	beforeStatusOK := hardFailures + 1
 	c := NewClient(
 		WithHTTPClient(
-			failingHTTPClient(hardFailures, beforeStatusOK),
+			newMockHTTPClient(t, hardFailures, beforeStatusOK),
 		),
 		WithRetrier(
 			&mockRetrier{
@@ -93,6 +107,8 @@ func TestClientDoSuccess(t *testing.T) {
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dummyURL, nil)
 	require.NoError(t, err)
 
+	req.Header = dummyHeader
+
 	res, err := c.Do(req)
 	require.NoError(t, err)
 	defer res.Body.Close()
@@ -100,27 +116,10 @@ func TestClientDoSuccess(t *testing.T) {
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 }
 
-func TestClientDoFailure(t *testing.T) {
-	hardFailures := 1
-	beforeStatusOK := hardFailures + 1
-	c := NewClient(
-		WithHTTPClient(
-			failingHTTPClient(hardFailures, beforeStatusOK),
-		),
-	)
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dummyURL, nil)
-	require.NoError(t, err)
-
-	res, err := c.Do(req) // nolint
-	assert.Error(t, err)
-	assert.Nil(t, res)
-}
-
 func TestClientSpecificMethodSuccess(t *testing.T) { // nolint: funlen
 	hardFailures := 3
 	beforeStatusOK := hardFailures + 1
-	internalClient := failingHTTPClient(hardFailures, beforeStatusOK)
+	internalClient := newMockHTTPClient(t, hardFailures, beforeStatusOK)
 
 	c := NewClient(
 		WithHTTPClient(internalClient),
@@ -137,43 +136,43 @@ func TestClientSpecificMethodSuccess(t *testing.T) { // nolint: funlen
 	ctx := context.Background()
 
 	testCases := []struct {
-		name string
-		fn   func() (*http.Response, error)
+		method string
+		fn     func() (*http.Response, error)
 	}{
+		// {
+		// 	http.MethodGet,
+		// 	func() (*http.Response, error) {
+		// 		return c.Get(ctx, dummyURL, dummyHeader)
+		// 	},
+		// },
 		{
-			"Get",
+			http.MethodPost,
 			func() (*http.Response, error) {
-				return c.Get(ctx, dummyURL, nil)
+				return c.Post(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
-		{
-			"Post",
-			func() (*http.Response, error) {
-				return c.Post(ctx, dummyURL, nil, nil)
-			},
-		},
-		{
-			"Put",
-			func() (*http.Response, error) {
-				return c.Put(ctx, dummyURL, nil, nil)
-			},
-		},
-		{
-			"Patch",
-			func() (*http.Response, error) {
-				return c.Patch(ctx, dummyURL, nil, nil)
-			},
-		},
-		{
-			"Delete",
-			func() (*http.Response, error) {
-				return c.Delete(ctx, dummyURL, nil)
-			},
-		},
+		// {
+		// 	http.MethodPut,
+		// 	func() (*http.Response, error) {
+		// 		return c.Put(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+		// 	},
+		// },
+		// {
+		// 	http.MethodPatch,
+		// 	func() (*http.Response, error) {
+		// 		return c.Patch(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+		// 	},
+		// },
+		// {
+		// 	http.MethodDelete,
+		// 	func() (*http.Response, error) {
+		// 		return c.Delete(ctx, dummyURL, dummyHeader)
+		// 	},
+		// },
 	}
 	for _, tc := range testCases {
 		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.method, func(t *testing.T) {
 			res, err := tc.fn()
 			require.NoError(t, err)
 			defer res.Body.Close()
@@ -185,10 +184,29 @@ func TestClientSpecificMethodSuccess(t *testing.T) { // nolint: funlen
 	}
 }
 
+func TestClientDoHardFailure(t *testing.T) {
+	hardFailures := 1
+	beforeStatusOK := hardFailures + 1
+	c := NewClient(
+		WithHTTPClient(
+			newMockHTTPClient(t, hardFailures, beforeStatusOK),
+		),
+	)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dummyURL, nil)
+	require.NoError(t, err)
+
+	req.Header = dummyHeader
+
+	res, err := c.Do(req) // nolint
+	assert.Error(t, err)
+	assert.Nil(t, res)
+}
+
 func TestClientSpecificMethodHardFailure(t *testing.T) {
 	hardFailures := 1
 	beforeStatusOK := 1
-	internalClient := failingHTTPClient(hardFailures, beforeStatusOK)
+	internalClient := newMockHTTPClient(t, hardFailures, beforeStatusOK)
 
 	c := NewClient(
 		WithHTTPClient(internalClient),
@@ -197,43 +215,43 @@ func TestClientSpecificMethodHardFailure(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
-		name string
-		fn   func() (*http.Response, error)
+		method string
+		fn     func() (*http.Response, error)
 	}{
 		{
-			"Get",
+			http.MethodGet,
 			func() (*http.Response, error) {
-				return c.Get(ctx, dummyURL, nil)
+				return c.Get(ctx, dummyURL, dummyHeader)
 			},
 		},
 		{
-			"Post",
+			http.MethodPost,
 			func() (*http.Response, error) {
-				return c.Post(ctx, dummyURL, nil, nil)
+				return c.Post(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
-			"Put",
+			http.MethodPut,
 			func() (*http.Response, error) {
-				return c.Put(ctx, dummyURL, nil, nil)
+				return c.Put(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
-			"Patch",
+			http.MethodPatch,
 			func() (*http.Response, error) {
-				return c.Patch(ctx, dummyURL, nil, nil)
+				return c.Patch(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
-			"Delete",
+			http.MethodDelete,
 			func() (*http.Response, error) {
-				return c.Delete(ctx, dummyURL, nil)
+				return c.Delete(ctx, dummyURL, dummyHeader)
 			},
 		},
 	}
 	for _, tc := range testCases {
 		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.method, func(t *testing.T) {
 			res, err := tc.fn() // nolint
 			assert.Error(t, err)
 			assert.Nil(t, res)
@@ -243,10 +261,39 @@ func TestClientSpecificMethodHardFailure(t *testing.T) {
 	}
 }
 
+func TestClientDoStatusFailure(t *testing.T) {
+	hardFailures := 0
+	beforeStatusOK := 3
+	c := NewClient(
+		WithHTTPClient(
+			newMockHTTPClient(t, hardFailures, beforeStatusOK),
+		),
+		WithRetrier(
+			&mockRetrier{
+				maxAttempts: 1,
+			},
+		),
+		WithRetryPolicy(func(statusCode int) bool {
+			return statusCode >= http.StatusInternalServerError
+		}),
+	)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dummyURL, nil)
+	require.NoError(t, err)
+
+	req.Header = dummyHeader
+
+	res, err := c.Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
+}
+
 func TestClientSpecificMethodStatusFailure(t *testing.T) { // nolint
 	hardFailures := 0
 	beforeStatusOK := 3
-	internalClient := failingHTTPClient(hardFailures, beforeStatusOK)
+	internalClient := newMockHTTPClient(t, hardFailures, beforeStatusOK)
 
 	c := NewClient(
 		WithHTTPClient(internalClient),
@@ -263,43 +310,43 @@ func TestClientSpecificMethodStatusFailure(t *testing.T) { // nolint
 	ctx := context.Background()
 
 	testCases := []struct {
-		name string
-		fn   func() (*http.Response, error)
+		method string
+		fn     func() (*http.Response, error)
 	}{
 		{
-			"Get",
+			http.MethodGet,
 			func() (*http.Response, error) {
-				return c.Get(ctx, dummyURL, nil)
+				return c.Get(ctx, dummyURL, dummyHeader)
 			},
 		},
 		{
-			"Post",
+			http.MethodPost,
 			func() (*http.Response, error) {
-				return c.Post(ctx, dummyURL, nil, nil)
+				return c.Post(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
-			"Put",
+			http.MethodPut,
 			func() (*http.Response, error) {
-				return c.Put(ctx, dummyURL, nil, nil)
+				return c.Put(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
-			"Patch",
+			http.MethodPatch,
 			func() (*http.Response, error) {
-				return c.Patch(ctx, dummyURL, nil, nil)
+				return c.Patch(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
-			"Delete",
+			http.MethodDelete,
 			func() (*http.Response, error) {
-				return c.Delete(ctx, dummyURL, nil)
+				return c.Delete(ctx, dummyURL, dummyHeader)
 			},
 		},
 	}
 	for _, tc := range testCases {
 		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.method, func(t *testing.T) {
 			res, err := tc.fn()
 			require.NoError(t, err)
 			defer res.Body.Close()
@@ -315,142 +362,46 @@ func TestClientSpecificMethodBadContext(t *testing.T) {
 	c := NewClient()
 
 	testCases := []struct {
-		name string
-		fn   func() (*http.Response, error)
+		method string
+		fn     func() (*http.Response, error)
 	}{
 		{
-			"Get",
+			http.MethodGet,
 			func() (*http.Response, error) {
-				return c.Get(nil, dummyURL, nil) // nolint
+				return c.Get(nil, dummyURL, dummyHeader) // nolint
 			},
 		},
 		{
-			"Post",
+			http.MethodPost,
 			func() (*http.Response, error) {
-				return c.Post(nil, dummyURL, nil, nil) // nolint
+				return c.Post(nil, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader) // nolint
 			},
 		},
 		{
-			"Put",
+			http.MethodPut,
 			func() (*http.Response, error) {
-				return c.Put(nil, dummyURL, nil, nil) // nolint
+				return c.Put(nil, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader) // nolint
 			},
 		},
 		{
-			"Patch",
+			http.MethodPatch,
 			func() (*http.Response, error) {
-				return c.Patch(nil, dummyURL, nil, nil) // nolint
+				return c.Patch(nil, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader) // nolint
 			},
 		},
 		{
-			"Delete",
+			http.MethodDelete,
 			func() (*http.Response, error) {
-				return c.Delete(nil, dummyURL, nil) // nolint
+				return c.Delete(nil, dummyURL, dummyHeader) // nolint
 			},
 		},
 	}
 	for _, tc := range testCases {
 		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.method, func(t *testing.T) {
 			res, err := tc.fn() // nolint
 			assert.Error(t, err)
 			assert.Nil(t, res)
 		})
 	}
-}
-
-type mockHTTPClientChecker struct {
-	t *testing.T
-
-	expectedMethod  string
-	expectedURL     string
-	expectedHeaders http.Header
-	expectedBody    *string
-}
-
-func (c *mockHTTPClientChecker) Do(req *http.Request) (*http.Response, error) {
-	assert.Equal(c.t, c.expectedMethod, req.Method)
-	assert.Equal(c.t, c.expectedURL, req.URL.String())
-	assert.Equal(c.t, c.expectedHeaders, req.Header)
-
-	if c.expectedBody != nil {
-		body, err := ioutil.ReadAll(req.Body)
-		assert.NoError(c.t, err)
-		assert.Equal(c.t, *c.expectedBody, string(body))
-	}
-
-	return &http.Response{
-		StatusCode: http.StatusOK,
-		Body:       ioutil.NopCloser(strings.NewReader(dummyResponseBody)),
-	}, nil
-}
-
-func TestClientGet(t *testing.T) {
-	c := NewClient(WithHTTPClient(&mockHTTPClientChecker{
-		t,
-		http.MethodGet,
-		dummyURL,
-		dummyHeader,
-		nil,
-	}))
-
-	res, err := c.Get(context.Background(), dummyURL, dummyHeader)
-	assert.NoError(t, res.Body.Close())
-	assert.NoError(t, err)
-}
-
-func TestClientPost(t *testing.T) {
-	c := NewClient(WithHTTPClient(&mockHTTPClientChecker{
-		t,
-		http.MethodPost,
-		dummyURL,
-		dummyHeader,
-		&dummyRequestBody,
-	}))
-
-	res, err := c.Post(context.Background(), dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-	assert.NoError(t, res.Body.Close())
-	assert.NoError(t, err)
-}
-
-func TestClientPut(t *testing.T) {
-	c := NewClient(WithHTTPClient(&mockHTTPClientChecker{
-		t,
-		http.MethodPut,
-		dummyURL,
-		dummyHeader,
-		&dummyRequestBody,
-	}))
-
-	res, err := c.Put(context.Background(), dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-	assert.NoError(t, res.Body.Close())
-	assert.NoError(t, err)
-}
-
-func TestClientPatch(t *testing.T) {
-	c := NewClient(WithHTTPClient(&mockHTTPClientChecker{
-		t,
-		http.MethodPatch,
-		dummyURL,
-		dummyHeader,
-		&dummyRequestBody,
-	}))
-
-	res, err := c.Patch(context.Background(), dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-	assert.NoError(t, res.Body.Close())
-	assert.NoError(t, err)
-}
-
-func TestClientDelete(t *testing.T) {
-	c := NewClient(WithHTTPClient(&mockHTTPClientChecker{
-		t,
-		http.MethodDelete,
-		dummyURL,
-		dummyHeader,
-		nil,
-	}))
-
-	res, err := c.Delete(context.Background(), dummyURL, dummyHeader)
-	assert.NoError(t, res.Body.Close())
-	assert.NoError(t, err)
 }
