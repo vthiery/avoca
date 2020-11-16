@@ -3,7 +3,9 @@ package avoca
 import (
 	"context"
 	"errors"
+	"io"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"strings"
 	"testing"
@@ -404,4 +406,67 @@ func TestClientSpecificMethodBadContext(t *testing.T) {
 			assert.Nil(t, res)
 		})
 	}
+}
+
+func TestCopyHTTPRequestBody(t *testing.T) {
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		dummyURL,
+		ioutil.NopCloser(strings.NewReader(dummyRequestBody)),
+	)
+	assert.NoError(t, err)
+
+	body, err := copyHTTPRequestBody(req)
+	assert.NoError(t, err)
+	assert.Equal(t, dummyRequestBody, string(body))
+}
+
+func TestCopyHTTPRequestBodyNil(t *testing.T) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, dummyURL, nil)
+	assert.NoError(t, err)
+
+	body, err := copyHTTPRequestBody(req)
+	assert.NoError(t, err)
+	assert.Nil(t, body)
+}
+
+type brokenCloser struct {
+	io.Reader
+}
+
+func (brokenCloser) Close() error {
+	return errors.New("cannot close")
+}
+
+func TestCopyHTTPRequestBodyFailCloseOriginal(t *testing.T) {
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		dummyURL,
+		brokenCloser{strings.NewReader(dummyRequestBody)},
+	)
+	assert.NoError(t, err)
+
+	body, err := copyHTTPRequestBody(req)
+	assert.Error(t, err)
+	assert.Nil(t, body)
+}
+
+func TestNewNopCloserFromBody(t *testing.T) {
+	rc := newNopCloserFromBody([]byte(dummyRequestBody))
+
+	assert.NotNil(t, rc)
+	body, err := ioutil.ReadAll(rc)
+	assert.NoError(t, err)
+	assert.Equal(t, dummyRequestBody, string(body))
+}
+
+func TestNewNopCloserFromBodyNil(t *testing.T) {
+	assert.Nil(t, newNopCloserFromBody(nil))
+}
+
+func TestDefaultRetryPolicy(t *testing.T) {
+	n := rand.Int() // nolint:gosec
+	assert.False(t, defaultRetryPolicy(n))
 }
