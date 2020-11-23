@@ -9,7 +9,7 @@ import (
 
 func TestRequestCreationError(t *testing.T) {
 	err := RequestCreationError{
-		errors.New("an error message"), // nolint
+		errors.New("an error message"),
 	}
 	assert.Equal(t, "request creation failed: an error message", err.Error())
 }

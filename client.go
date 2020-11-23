@@ -1,9 +1,11 @@
 package avoca
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"time"
 )
@@ -39,7 +41,16 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		res *http.Response
 		err error
 	)
+	// Consume the body an prepare a reader
+	body, err := copyHTTPRequestBody(req)
+	if err != nil {
+		return nil, err
+	}
+	// Retry the calls
 	err = c.retrier.Do(req.Context(), func(context.Context) error {
+		// Overwrite the request body using a NopCloser
+		req.Body = newNopCloserFromBody(body)
+
 		res, err = c.client.Do(req) // nolint
 		if err != nil {
 			return err
@@ -55,6 +66,31 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	return res, nil
+}
+
+// copyHTTPRequestBody copies the body from a HTTP request
+// and closes the original body.
+func copyHTTPRequestBody(req *http.Request) ([]byte, error) {
+	if req.Body == nil {
+		return nil, nil
+	}
+	body, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := req.Body.Close(); err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+// newNopCloserFromBody creates an ioutil.NopCloser from
+// a body. If the body is nil, it returns nil.
+func newNopCloserFromBody(body []byte) io.ReadCloser {
+	if body == nil {
+		return nil
+	}
+	return ioutil.NopCloser(bytes.NewReader(body))
 }
 
 // Get makes a HTTP GET request to provided URL.
