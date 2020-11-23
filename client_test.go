@@ -118,7 +118,48 @@ func TestClientDoSuccess(t *testing.T) {
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 }
 
-func TestClientSpecificMethodSuccess(t *testing.T) { // nolint: funlen
+func allMethodsTestCases(ctx context.Context, c *Client) []struct {
+	method string
+	fn     func() (*http.Response, error)
+} {
+	return []struct {
+		method string
+		fn     func() (*http.Response, error)
+	}{
+		{
+			http.MethodGet,
+			func() (*http.Response, error) {
+				return c.Get(ctx, dummyURL, dummyHeader)
+			},
+		},
+		{
+			http.MethodPost,
+			func() (*http.Response, error) {
+				return c.Post(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+			},
+		},
+		{
+			http.MethodPut,
+			func() (*http.Response, error) {
+				return c.Put(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+			},
+		},
+		{
+			http.MethodPatch,
+			func() (*http.Response, error) {
+				return c.Patch(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+			},
+		},
+		{
+			http.MethodDelete,
+			func() (*http.Response, error) {
+				return c.Delete(ctx, dummyURL, dummyHeader)
+			},
+		},
+	}
+}
+
+func TestClientSpecificMethodSuccess(t *testing.T) {
 	hardFailures := 3
 	beforeStatusOK := hardFailures + 1
 	internalClient := newMockHTTPClient(t, hardFailures, beforeStatusOK)
@@ -135,44 +176,7 @@ func TestClientSpecificMethodSuccess(t *testing.T) { // nolint: funlen
 		}),
 	)
 
-	ctx := context.Background()
-
-	testCases := []struct {
-		method string
-		fn     func() (*http.Response, error)
-	}{
-		// {
-		// 	http.MethodGet,
-		// 	func() (*http.Response, error) {
-		// 		return c.Get(ctx, dummyURL, dummyHeader)
-		// 	},
-		// },
-		{
-			http.MethodPost,
-			func() (*http.Response, error) {
-				return c.Post(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-			},
-		},
-		// {
-		// 	http.MethodPut,
-		// 	func() (*http.Response, error) {
-		// 		return c.Put(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-		// 	},
-		// },
-		// {
-		// 	http.MethodPatch,
-		// 	func() (*http.Response, error) {
-		// 		return c.Patch(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-		// 	},
-		// },
-		// {
-		// 	http.MethodDelete,
-		// 	func() (*http.Response, error) {
-		// 		return c.Delete(ctx, dummyURL, dummyHeader)
-		// 	},
-		// },
-	}
-	for _, tc := range testCases {
+	for _, tc := range allMethodsTestCases(context.Background(), c) { // nolint
 		tc := tc
 		t.Run(tc.method, func(t *testing.T) {
 			res, err := tc.fn()
@@ -214,44 +218,7 @@ func TestClientSpecificMethodHardFailure(t *testing.T) {
 		WithHTTPClient(internalClient),
 	)
 
-	ctx := context.Background()
-
-	testCases := []struct {
-		method string
-		fn     func() (*http.Response, error)
-	}{
-		{
-			http.MethodGet,
-			func() (*http.Response, error) {
-				return c.Get(ctx, dummyURL, dummyHeader)
-			},
-		},
-		{
-			http.MethodPost,
-			func() (*http.Response, error) {
-				return c.Post(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-			},
-		},
-		{
-			http.MethodPut,
-			func() (*http.Response, error) {
-				return c.Put(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-			},
-		},
-		{
-			http.MethodPatch,
-			func() (*http.Response, error) {
-				return c.Patch(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-			},
-		},
-		{
-			http.MethodDelete,
-			func() (*http.Response, error) {
-				return c.Delete(ctx, dummyURL, dummyHeader)
-			},
-		},
-	}
-	for _, tc := range testCases {
+	for _, tc := range allMethodsTestCases(context.Background(), c) { // nolint
 		tc := tc
 		t.Run(tc.method, func(t *testing.T) {
 			res, err := tc.fn() // nolint
@@ -292,7 +259,7 @@ func TestClientDoStatusFailure(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, res.StatusCode)
 }
 
-func TestClientSpecificMethodStatusFailure(t *testing.T) { // nolint
+func TestClientSpecificMethodStatusFailure(t *testing.T) {
 	hardFailures := 0
 	beforeStatusOK := 3
 	internalClient := newMockHTTPClient(t, hardFailures, beforeStatusOK)
@@ -309,44 +276,7 @@ func TestClientSpecificMethodStatusFailure(t *testing.T) { // nolint
 		}),
 	)
 
-	ctx := context.Background()
-
-	testCases := []struct {
-		method string
-		fn     func() (*http.Response, error)
-	}{
-		{
-			http.MethodGet,
-			func() (*http.Response, error) {
-				return c.Get(ctx, dummyURL, dummyHeader)
-			},
-		},
-		{
-			http.MethodPost,
-			func() (*http.Response, error) {
-				return c.Post(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-			},
-		},
-		{
-			http.MethodPut,
-			func() (*http.Response, error) {
-				return c.Put(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-			},
-		},
-		{
-			http.MethodPatch,
-			func() (*http.Response, error) {
-				return c.Patch(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
-			},
-		},
-		{
-			http.MethodDelete,
-			func() (*http.Response, error) {
-				return c.Delete(ctx, dummyURL, dummyHeader)
-			},
-		},
-	}
-	for _, tc := range testCases {
+	for _, tc := range allMethodsTestCases(context.Background(), c) { // nolint
 		tc := tc
 		t.Run(tc.method, func(t *testing.T) {
 			res, err := tc.fn()
@@ -363,42 +293,7 @@ func TestClientSpecificMethodStatusFailure(t *testing.T) { // nolint
 func TestClientSpecificMethodBadContext(t *testing.T) {
 	c := NewClient()
 
-	testCases := []struct {
-		method string
-		fn     func() (*http.Response, error)
-	}{
-		{
-			http.MethodGet,
-			func() (*http.Response, error) {
-				return c.Get(nil, dummyURL, dummyHeader) // nolint
-			},
-		},
-		{
-			http.MethodPost,
-			func() (*http.Response, error) {
-				return c.Post(nil, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader) // nolint
-			},
-		},
-		{
-			http.MethodPut,
-			func() (*http.Response, error) {
-				return c.Put(nil, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader) // nolint
-			},
-		},
-		{
-			http.MethodPatch,
-			func() (*http.Response, error) {
-				return c.Patch(nil, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader) // nolint
-			},
-		},
-		{
-			http.MethodDelete,
-			func() (*http.Response, error) {
-				return c.Delete(nil, dummyURL, dummyHeader) // nolint
-			},
-		},
-	}
-	for _, tc := range testCases {
+	for _, tc := range allMethodsTestCases(nil, c) { // nolint
 		tc := tc
 		t.Run(tc.method, func(t *testing.T) {
 			res, err := tc.fn() // nolint
