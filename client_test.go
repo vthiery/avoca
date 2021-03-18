@@ -81,6 +81,8 @@ func (c *mockHTTPClient) reset() {
 }
 
 func newMockHTTPClient(t *testing.T, hardFailures int, beforeStatusOK int) *mockHTTPClient {
+	t.Helper()
+
 	return &mockHTTPClient{
 		t: t,
 
