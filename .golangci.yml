@@ -1,8 +1,9 @@
 linters:
   enable-all: true
   disable:
-    - gochecknoinits
+    - exhaustivestruct
     - nlreturn
+    - wrapcheck
     - wsl
 
 issues:
@@ -11,4 +12,5 @@ issues:
       linters:
         - goerr113
         - gomnd
+        - paralleltest
         - testpackage
