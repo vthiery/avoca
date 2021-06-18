@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -54,7 +53,7 @@ func (c *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	assert.Equal(c.t, dummyHeader, req.Header)
 
 	if req.Body != nil {
-		body, err := ioutil.ReadAll(req.Body)
+		body, err := io.ReadAll(req.Body)
 		assert.NoError(c.t, err)
 		assert.Equal(c.t, dummyRequestBody, string(body))
 	}
@@ -67,12 +66,12 @@ func (c *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 		c.count++
 		return &http.Response{
 			StatusCode: http.StatusInternalServerError,
-			Body:       ioutil.NopCloser(strings.NewReader(dummyResponseBody)),
+			Body:       io.NopCloser(strings.NewReader(dummyResponseBody)),
 		}, nil
 	}
 	return &http.Response{
 		StatusCode: http.StatusOK,
-		Body:       ioutil.NopCloser(strings.NewReader(dummyResponseBody)),
+		Body:       io.NopCloser(strings.NewReader(dummyResponseBody)),
 	}, nil
 }
 
@@ -137,19 +136,19 @@ func allMethodsTestCases(ctx context.Context, c *Client) []struct {
 		{
 			http.MethodPost,
 			func() (*http.Response, error) {
-				return c.Post(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+				return c.Post(ctx, dummyURL, io.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
 			http.MethodPut,
 			func() (*http.Response, error) {
-				return c.Put(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+				return c.Put(ctx, dummyURL, io.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
 			http.MethodPatch,
 			func() (*http.Response, error) {
-				return c.Patch(ctx, dummyURL, ioutil.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+				return c.Patch(ctx, dummyURL, io.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
@@ -310,7 +309,7 @@ func TestCopyHTTPRequestBody(t *testing.T) {
 		context.Background(),
 		http.MethodPost,
 		dummyURL,
-		ioutil.NopCloser(strings.NewReader(dummyRequestBody)),
+		io.NopCloser(strings.NewReader(dummyRequestBody)),
 	)
 	assert.NoError(t, err)
 
@@ -354,7 +353,8 @@ func TestNewNopCloserFromBody(t *testing.T) {
 	rc := newNopCloserFromBody([]byte(dummyRequestBody))
 
 	assert.NotNil(t, rc)
-	body, err := ioutil.ReadAll(rc)
+
+	body, err := io.ReadAll(rc)
 	assert.NoError(t, err)
 	assert.Equal(t, dummyRequestBody, string(body))
 }

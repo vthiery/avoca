@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"time"
 )
@@ -74,7 +73,7 @@ func copyHTTPRequestBody(req *http.Request) ([]byte, error) {
 	if req.Body == nil {
 		return nil, nil
 	}
-	body, err := ioutil.ReadAll(req.Body)
+	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -84,13 +83,13 @@ func copyHTTPRequestBody(req *http.Request) ([]byte, error) {
 	return body, nil
 }
 
-// newNopCloserFromBody creates an ioutil.NopCloser from
+// newNopCloserFromBody creates an io.NopCloser from
 // a body. If the body is nil, it returns nil.
 func newNopCloserFromBody(body []byte) io.ReadCloser {
 	if body == nil {
 		return nil
 	}
-	return ioutil.NopCloser(bytes.NewReader(body))
+	return io.NopCloser(bytes.NewReader(body))
 }
 
 // Get makes a HTTP GET request to provided URL.
