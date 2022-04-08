@@ -20,7 +20,7 @@ var (
 	dummyRequestBody  = `{ "id": "me" }`
 	dummyResponseBody = `{ "response": "whatever" }`
 	dummyHeader       = http.Header{
-		"content-type": {"application/json"},
+		"content-type": []string{"application/json"},
 	}
 )
 
@@ -34,8 +34,10 @@ func (r *mockRetrier) Do(ctx context.Context, fn func(context.Context) error) er
 		if err = fn(ctx); err != nil {
 			continue
 		}
+
 		return nil
 	}
+
 	return err
 }
 
@@ -60,15 +62,18 @@ func (c *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 	if c.count < c.hardFailures {
 		c.count++
+
 		return nil, errFailRequest
 	}
 	if c.count < c.beforeStatusOK {
 		c.count++
+
 		return &http.Response{
 			StatusCode: http.StatusInternalServerError,
 			Body:       io.NopCloser(strings.NewReader(dummyResponseBody)),
 		}, nil
 	}
+
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(dummyResponseBody)),
@@ -93,7 +98,7 @@ func newMockHTTPClient(t *testing.T, hardFailures int, beforeStatusOK int) *mock
 func TestClientDoSuccess(t *testing.T) {
 	hardFailures := 3
 	beforeStatusOK := hardFailures + 1
-	c := NewClient(
+	client := NewClient(
 		WithHTTPClient(
 			newMockHTTPClient(t, hardFailures, beforeStatusOK),
 		),
@@ -112,14 +117,14 @@ func TestClientDoSuccess(t *testing.T) {
 
 	req.Header = dummyHeader
 
-	res, err := c.Do(req)
+	res, err := client.Do(req)
 	require.NoError(t, err)
 	defer res.Body.Close()
 
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 }
 
-func allMethodsTestCases(ctx context.Context, c *Client) []struct {
+func allMethodsTestCases(ctx context.Context, client *Client) []struct {
 	method string
 	fn     func() (*http.Response, error)
 } {
@@ -130,31 +135,31 @@ func allMethodsTestCases(ctx context.Context, c *Client) []struct {
 		{
 			http.MethodGet,
 			func() (*http.Response, error) {
-				return c.Get(ctx, dummyURL, dummyHeader)
+				return client.Get(ctx, dummyURL, dummyHeader)
 			},
 		},
 		{
 			http.MethodPost,
 			func() (*http.Response, error) {
-				return c.Post(ctx, dummyURL, io.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+				return client.Post(ctx, dummyURL, io.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
 			http.MethodPut,
 			func() (*http.Response, error) {
-				return c.Put(ctx, dummyURL, io.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+				return client.Put(ctx, dummyURL, io.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
 			http.MethodPatch,
 			func() (*http.Response, error) {
-				return c.Patch(ctx, dummyURL, io.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
+				return client.Patch(ctx, dummyURL, io.NopCloser(strings.NewReader(dummyRequestBody)), dummyHeader)
 			},
 		},
 		{
 			http.MethodDelete,
 			func() (*http.Response, error) {
-				return c.Delete(ctx, dummyURL, dummyHeader)
+				return client.Delete(ctx, dummyURL, dummyHeader)
 			},
 		},
 	}
@@ -165,7 +170,7 @@ func TestClientSpecificMethodSuccess(t *testing.T) {
 	beforeStatusOK := hardFailures + 1
 	internalClient := newMockHTTPClient(t, hardFailures, beforeStatusOK)
 
-	c := NewClient(
+	client := NewClient(
 		WithHTTPClient(internalClient),
 		WithRetrier(
 			&mockRetrier{
@@ -177,7 +182,7 @@ func TestClientSpecificMethodSuccess(t *testing.T) {
 		}),
 	)
 
-	for _, tc := range allMethodsTestCases(context.Background(), c) { // nolint
+	for _, tc := range allMethodsTestCases(context.Background(), client) {
 		tc := tc
 		t.Run(tc.method, func(t *testing.T) {
 			res, err := tc.fn()
@@ -194,7 +199,7 @@ func TestClientSpecificMethodSuccess(t *testing.T) {
 func TestClientDoHardFailure(t *testing.T) {
 	hardFailures := 1
 	beforeStatusOK := hardFailures + 1
-	c := NewClient(
+	client := NewClient(
 		WithHTTPClient(
 			newMockHTTPClient(t, hardFailures, beforeStatusOK),
 		),
@@ -205,7 +210,7 @@ func TestClientDoHardFailure(t *testing.T) {
 
 	req.Header = dummyHeader
 
-	res, err := c.Do(req) // nolint
+	res, err := client.Do(req)
 	assert.Error(t, err)
 	assert.Nil(t, res)
 }
@@ -215,14 +220,14 @@ func TestClientSpecificMethodHardFailure(t *testing.T) {
 	beforeStatusOK := 1
 	internalClient := newMockHTTPClient(t, hardFailures, beforeStatusOK)
 
-	c := NewClient(
+	client := NewClient(
 		WithHTTPClient(internalClient),
 	)
 
-	for _, tc := range allMethodsTestCases(context.Background(), c) { // nolint
+	for _, tc := range allMethodsTestCases(context.Background(), client) {
 		tc := tc
 		t.Run(tc.method, func(t *testing.T) {
-			res, err := tc.fn() // nolint
+			res, err := tc.fn()
 			assert.Error(t, err)
 			assert.Nil(t, res)
 
@@ -234,7 +239,7 @@ func TestClientSpecificMethodHardFailure(t *testing.T) {
 func TestClientDoStatusFailure(t *testing.T) {
 	hardFailures := 0
 	beforeStatusOK := 3
-	c := NewClient(
+	client := NewClient(
 		WithHTTPClient(
 			newMockHTTPClient(t, hardFailures, beforeStatusOK),
 		),
@@ -253,7 +258,7 @@ func TestClientDoStatusFailure(t *testing.T) {
 
 	req.Header = dummyHeader
 
-	res, err := c.Do(req)
+	res, err := client.Do(req)
 	require.NoError(t, err)
 	defer res.Body.Close()
 
@@ -265,7 +270,7 @@ func TestClientSpecificMethodStatusFailure(t *testing.T) {
 	beforeStatusOK := 3
 	internalClient := newMockHTTPClient(t, hardFailures, beforeStatusOK)
 
-	c := NewClient(
+	client := NewClient(
 		WithHTTPClient(internalClient),
 		WithRetrier(
 			&mockRetrier{
@@ -277,7 +282,7 @@ func TestClientSpecificMethodStatusFailure(t *testing.T) {
 		}),
 	)
 
-	for _, tc := range allMethodsTestCases(context.Background(), c) { // nolint
+	for _, tc := range allMethodsTestCases(context.Background(), client) {
 		tc := tc
 		t.Run(tc.method, func(t *testing.T) {
 			res, err := tc.fn()
@@ -294,10 +299,10 @@ func TestClientSpecificMethodStatusFailure(t *testing.T) {
 func TestClientSpecificMethodBadContext(t *testing.T) {
 	c := NewClient()
 
-	for _, tc := range allMethodsTestCases(nil, c) { // nolint
+	for _, tc := range allMethodsTestCases(nil, c) {
 		tc := tc
 		t.Run(tc.method, func(t *testing.T) {
-			res, err := tc.fn() // nolint
+			res, err := tc.fn()
 			assert.Error(t, err)
 			assert.Nil(t, res)
 		})

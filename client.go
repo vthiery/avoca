@@ -50,7 +50,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		// Overwrite the request body using a NopCloser
 		req.Body = newNopCloserFromBody(body)
 
-		res, err = c.client.Do(req) // nolint
+		res, err = c.client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -64,6 +64,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if err != nil && !errors.Is(err, ErrStatusCode) {
 		return nil, err
 	}
+
 	return res, nil
 }
 
@@ -73,6 +74,7 @@ func copyHTTPRequestBody(req *http.Request) ([]byte, error) {
 	if req.Body == nil {
 		return nil, nil
 	}
+
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		return nil, err
@@ -80,6 +82,7 @@ func copyHTTPRequestBody(req *http.Request) ([]byte, error) {
 	if err := req.Body.Close(); err != nil {
 		return nil, err
 	}
+
 	return body, nil
 }
 
@@ -89,6 +92,7 @@ func newNopCloserFromBody(body []byte) io.ReadCloser {
 	if body == nil {
 		return nil
 	}
+
 	return io.NopCloser(bytes.NewReader(body))
 }
 
@@ -99,7 +103,8 @@ func (c *Client) Get(ctx context.Context, url string, headers http.Header) (*htt
 		return nil, &RequestCreationError{err}
 	}
 	req.Header = headers
-	return c.Do(req)
+
+	return c.Do(req.WithContext(ctx))
 }
 
 // Post makes a HTTP POST request to provided URL.
@@ -109,7 +114,8 @@ func (c *Client) Post(ctx context.Context, url string, body io.Reader, headers h
 		return nil, &RequestCreationError{err}
 	}
 	req.Header = headers
-	return c.Do(req)
+
+	return c.Do(req.WithContext(ctx))
 }
 
 // Put makes a HTTP PUT request to provided URL.
@@ -119,7 +125,8 @@ func (c *Client) Put(ctx context.Context, url string, body io.Reader, headers ht
 		return nil, &RequestCreationError{err}
 	}
 	req.Header = headers
-	return c.Do(req)
+
+	return c.Do(req.WithContext(ctx))
 }
 
 // Patch makes a HTTP PATCH request to provided URL.
@@ -129,6 +136,7 @@ func (c *Client) Patch(ctx context.Context, url string, body io.Reader, headers 
 		return nil, &RequestCreationError{err}
 	}
 	req.Header = headers
+
 	return c.Do(req)
 }
 
@@ -139,6 +147,7 @@ func (c *Client) Delete(ctx context.Context, url string, headers http.Header) (*
 		return nil, &RequestCreationError{err}
 	}
 	req.Header = headers
+
 	return c.Do(req)
 }
 
@@ -178,6 +187,7 @@ func NewClient(opts ...Option) *Client {
 	for _, opt := range opts {
 		opt(&client)
 	}
+
 	return &client
 }
 
